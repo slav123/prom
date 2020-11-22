@@ -44,11 +44,11 @@ func cleanup(textcopy string) string {
 }
 
 //  Excerpt generate excerpt
-func Excerpt(textcopy string) string {
+func Excerpt(textCopy string) string {
 
-	textcopy = cleanup(textcopy)
+	textCopy = cleanup(textCopy)
 
-	split := strings.Split(textcopy, " ")
+	split := strings.Split(textCopy, " ")
 
 	max := 70
 

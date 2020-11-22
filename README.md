@@ -1,10 +1,16 @@
-#Prom - find a prominent image on the website
+# Prom - find a prominent image on the website
 
 Simple go service to find a prominent image on the website. 
-Script is also capable of extracting excerpt from the website, and content with HTML tags.
-It's useful to create a website "preview" for news reader or something.
 
-##Usage
+App is also capable of extracting excerpt from the website, and content with HTML tags.
+It's useful to create a website "preview" for news reader or something.
+## How it works
+
+Algorithm is pretty simple, we scrape all images. We look for the biggest one. It utilises go routines to do the image comparison.
+
+We do some smart image type recognition, and we don't download whole images, only headers to check image sizes. 
+
+## Usage
 
     go run main.go
     

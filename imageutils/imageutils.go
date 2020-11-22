@@ -25,7 +25,7 @@ func JPGDimensions(body []byte) (int32, int32) {
 	return w, h
 }
 
-// read JPG headers and return dimensons look only for basic marker
+// read JPG headers and return dimensions look only for basic marker
 func JPGHeaders(body []byte) (int32, int32) {
 	offset := 0
 
@@ -46,16 +46,16 @@ func JPGHeaders(body []byte) (int32, int32) {
 func JPGHeadersQuick(data []byte) (int32, int32) {
 	var width, height, i int
 
-	data_size := len(data)
+	dataSize := len(data)
 
 	if data[i] == 0xFF && data[i+1] == 0xD8 && data[i+2] == 0xFF && data[i+3] == 0xE0 {
 		i += 4
 		if data[i+2] == 'J' && data[i+3] == 'F' && data[i+4] == 'I' && data[i+5] == 'F' && data[i+6] == 0x00 {
 			block_length := int(data[i])*256 + int(data[i+1])
-			for i < data_size {
+			for i < dataSize {
 				i += block_length //Increase the file index to get to the next block
 
-				if i >= data_size {
+				if i >= dataSize {
 					return -1, -1 //Check to protect against segmentation faults
 				}
 
