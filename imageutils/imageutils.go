@@ -51,9 +51,9 @@ func JPGHeadersQuick(data []byte) (int32, int32) {
 	if data[i] == 0xFF && data[i+1] == 0xD8 && data[i+2] == 0xFF && data[i+3] == 0xE0 {
 		i += 4
 		if data[i+2] == 'J' && data[i+3] == 'F' && data[i+4] == 'I' && data[i+5] == 'F' && data[i+6] == 0x00 {
-			block_length := int(data[i])*256 + int(data[i+1])
+			blockLength := int(data[i])*256 + int(data[i+1])
 			for i < dataSize {
-				i += block_length //Increase the file index to get to the next block
+				i += blockLength //Increase the file index to get to the next block
 
 				if i >= dataSize {
 					return -1, -1 //Check to protect against segmentation faults
@@ -70,8 +70,8 @@ func JPGHeadersQuick(data []byte) (int32, int32) {
 					width = int(data[i+7])*256 + int(data[i+8])
 					return int32(width), int32(height)
 				} else {
-					i += 2                                           //Skip the block marker
-					block_length = int(data[i])*256 + int(data[i+1]) //Go to the next block
+					i += 2                                          //Skip the block marker
+					blockLength = int(data[i])*256 + int(data[i+1]) //Go to the next block
 				}
 			}
 		}

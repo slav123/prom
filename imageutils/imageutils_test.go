@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-var test_ext = []struct {
+var testExt = []struct {
 	ext, source string
 }{
 	{"png", "samples/file.png"},
@@ -15,7 +15,7 @@ var test_ext = []struct {
 }
 
 func TestDetermineImageType(t *testing.T) {
-	for _, sample := range test_ext {
+	for _, sample := range testExt {
 		data, err := ioutil.ReadFile(sample.source)
 		check(err)
 		if v := DetermineImageType(&data); v != sample.ext {

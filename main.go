@@ -1,4 +1,4 @@
-package prom
+package main
 
 import (
 	"bytes"
@@ -194,8 +194,9 @@ func main() {
 // display status with version
 func handleStatus(w http.ResponseWriter, r *http.Request) {
 	// A very simple health check.
-	w.WriteHeader(http.StatusOK)
 	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+
 	w.Write([]byte("{ \"alive\" : true, \"version\" : \"" + minVersion + "\"}"))
 }
 
@@ -268,7 +269,7 @@ func handleExtract(w http.ResponseWriter, r *http.Request) {
 	// content
 	result.Content = htmlutils.ReadBody(string(body))
 
-	// trimed
+	// trimmed
 	result.Dek = strings.Trim(striphtmltags.StripTags(result.Content), " ")
 
 	// excerpt
@@ -293,12 +294,12 @@ func handleExtract(w http.ResponseWriter, r *http.Request) {
 		log.Println(err)
 	}
 
-	w.WriteHeader(http.StatusOK)
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Methods", "*")
 	w.Header().Set("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization")
-	w.WriteHeader(200)
+	w.WriteHeader(http.StatusOK)
+
 	w.Write(buf.Bytes())
 	//out.WriteTo(os.Stdout)
 

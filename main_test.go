@@ -1,4 +1,4 @@
-package prom
+package main
 
 import (
 	"net/http"

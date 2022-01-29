@@ -38,4 +38,5 @@ sample output:
 * read schema.org info
 * recognize meta from wordpress
 * cleanup content
-* try to skip cookies
+* try to skip cookies warning
+* webp
