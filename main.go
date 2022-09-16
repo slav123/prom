@@ -204,6 +204,13 @@ func handleStatus(w http.ResponseWriter, r *http.Request) {
 func handleExtract(w http.ResponseWriter, r *http.Request) {
 	url := r.URL.Query().Get("url")
 
+	proxy := r.URL.Query().Get("proxy")
+
+	if proxy == "own" {
+		// https://qie1vuqnpd.execute-api.ap-southeast-2.amazonaws.com/dev/dom?url=
+		url = fmt.Sprintf("%s%s", os.Getenv("PROXY_OWN"), url)
+	}
+
 	var result Output
 
 	/* app engine
@@ -282,6 +289,10 @@ func handleExtract(w http.ResponseWriter, r *http.Request) {
 		maxDimensions = 0
 		GetAllImages(bytes.NewReader(body), url, r)
 	} else {
+		// remove proxy url from image
+		if proxy == "own" {
+			promImage = strings.Replace(url, os.Getenv("PROXY_OWN"), "", 1)
+		}
 		promImage = htmlutils.GetBaseUrlString(promImage, url)
 	}
 	result.LeadImageURL = promImage
