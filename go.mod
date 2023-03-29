@@ -14,5 +14,5 @@ require (
 	github.com/andybalholm/cascadia v1.3.1 // indirect
 	github.com/facebookgo/atomicfile v0.0.0-20151019160806-2de1f203e7d5 // indirect
 	github.com/golang/protobuf v1.3.2 // indirect
-	golang.org/x/net v0.0.0-20210916014120-12bc252f5db8 // indirect
+	golang.org/x/net v0.7.0 // indirect
 )
