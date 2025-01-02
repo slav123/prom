@@ -39,10 +39,7 @@ jobs:
       uses: github/codeql-action/init@v2
       with:
         languages: ${{ matrix.language }}
-        # Optional: specify queries for deeper analysis
         queries: security-and-quality
-        # Optional: enable deeper analysis for better results
-        config-file: .github/codeql/codeql-config.yml
 
     # For Go, we should run go build explicitly instead of using autobuild
     - name: Build Go Code
