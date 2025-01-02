@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/PuerkitoBio/goquery"
 	"github.com/denisbrodbeck/striphtmltags"
 )
 
@@ -149,9 +151,11 @@ func GetAllImages(re io.Reader, url string, r *http.Request) {
 }
 
 type Output struct {
-	Title         string `json:"title"`
 	Success       bool   `json:"success"`
 	Message       string `json:"message"`
+	Title         string `json:"title"`
+	Description   string `json:"description"`
+	Keywords      string `json:"keywords"`
 	DatePublished string `json:"date_published"`
 	LastModified  string `json:"last_modified"`
 	LeadImageURL  string `json:"lead_image_url"`
@@ -294,20 +298,34 @@ func handleExtract(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Process the content
-	result.Title = htmlutils.SearchForTitle(bytes.NewReader(body))
+	bodyReader := bytes.NewReader(body)
+	doc, err := goquery.NewDocumentFromReader(bodyReader)
+	if err != nil {
+		log.Fatal(err)
+	}
 
-	result.DatePublished = htmlutils.SearchForDate(bytes.NewReader(body))
+	result.Title = htmlutils.SearchForTitleFromDoc(doc)
+	result.DatePublished = htmlutils.SearchForDateFromDoc(doc)
+	result.Description, err = htmlutils.SearchForMetaTag(bytes.NewReader(body), "description")
+	result.Keywords, err = htmlutils.SearchForMetaTag(bytes.NewReader(body), "keywords")
 
 	if lastMod := resp.Header.Get("Last-Modified"); lastMod != "" {
 		result.LastModified = lastMod
 	}
 
-	result.Content = htmlutils.ReadBody(string(body))
+	result.Content, err = htmlutils.ReadBodyFromDoc(doc)
+	if err != nil {
+		slog.Error(err.Error())
+	}
 	result.Dek = strings.Trim(striphtmltags.StripTags(result.Content), " ")
 	result.Excerpt = htmlutils.Excerpt(result.Dek)
 
 	// lead image - first try to get it from meta
-	promImage = htmlutils.SearchForMeta(bytes.NewReader(body))
+	promImage, err = htmlutils.SearchForMetaImage(bytes.NewReader(body))
+	if err != nil {
+		slog.Error(err.Error())
+	}
+
 	if promImage == "" {
 		maxDimensions = 0
 		GetAllImages(bytes.NewReader(body), url, r)

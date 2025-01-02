@@ -117,24 +117,33 @@ func GetBaseUrlString(src, baseURL string) string {
 	return base.ResolveReference(relativeURL).String()
 }
 
-// SearchForTitle serach for title
+// SearchForMeta serach for meta description
+func SearchForMetaTag(r io.Reader, tag string) (string, error) {
+
+	doc, err := goquery.NewDocumentFromReader(r)
+	if err != nil {
+		return "", err
+	}
+
+	return doc.Find("meta[name="+tag+"]").AttrOr("content", ""), nil
+}
+
+// SearchForTitleFromDoc searches for title using an existing document
+func SearchForTitleFromDoc(doc *goquery.Document) string {
+	return doc.Find("title").Text()
+}
+
+// SearchForTitle search for title
 func SearchForTitle(r io.Reader) string {
 	doc, err := goquery.NewDocumentFromReader(r)
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	return doc.Find("title").Text()
+	return SearchForTitleFromDoc(doc)
 }
 
-// SearchForDate serach for meta date
-func SearchForDate(r io.Reader) string {
-
-	doc, err := goquery.NewDocumentFromReader(r)
-	if err != nil {
-		log.Fatal(err)
-	}
-
+// SearchForDateFromDoc searches for meta date using an existing document
+func SearchForDateFromDoc(doc *goquery.Document) string {
 	var content string
 	doc.Find("meta").Each(func(i int, s *goquery.Selection) {
 
@@ -151,8 +160,6 @@ func SearchForDate(r io.Reader) string {
 			hit = true
 		}
 
-		//<meta property="article:published_time" content="2018-03-19T09:17:23+10:00" />
-
 		if hit {
 			content = s.AttrOr("content", "")
 			return
@@ -161,13 +168,17 @@ func SearchForDate(r io.Reader) string {
 	return content
 }
 
-// SearchForMeta for meta og image or sth
-func SearchForMeta(r io.Reader) string {
-
+// SearchForDate search for meta date
+func SearchForDate(r io.Reader) string {
 	doc, err := goquery.NewDocumentFromReader(r)
 	if err != nil {
 		log.Fatal(err)
 	}
+	return SearchForDateFromDoc(doc)
+}
+
+// SearchForMetaImageFromDoc for meta og image or sth
+func SearchForMetaImageFromDoc(doc *goquery.Document) (string, error) {
 
 	var content string
 	doc.Find("meta").Each(func(i int, s *goquery.Selection) {
@@ -199,17 +210,32 @@ func SearchForMeta(r io.Reader) string {
 		}
 	})
 
-	return content
+	return content, nil
 }
 
-func ReadBody(body string) string {
-
-	doc, err := readability.NewDocument(body)
+// SearchForMetaImage for meta og image or sth
+func SearchForMetaImage(r io.Reader) (string, error) {
+	doc, err := goquery.NewDocumentFromReader(r)
 	if err != nil {
-		// do something ...
+		return "", err
+	}
+	return SearchForMetaImageFromDoc(doc)
+}
+
+// ReadBodyFromDoc read body
+func ReadBodyFromDoc(doc *goquery.Document) (string, error) {
+
+	html, err := doc.Html()
+	if err != nil {
+		return "", err
+	}
+	
+	readDoc, err := readability.NewDocument(html)
+	if err != nil {
+		return "", err
 	}
 
-	content := doc.Content()
+	content := readDoc.Content()
 	// do something with my content
 
 	content = strings.Replace(content, "<head></head>", "", -1)
@@ -221,5 +247,14 @@ func ReadBody(body string) string {
 	content = strings.TrimSuffix(content, "</div></div>")
 	content = strings.TrimSpace(content)
 
-	return cleanup(content)
+	return cleanup(content), nil
+}
+
+// ReadBody read body
+func ReadBody(body string) (string, error) {
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(body))
+	if err != nil {
+		return "", err
+	}
+	return ReadBodyFromDoc(doc)
 }

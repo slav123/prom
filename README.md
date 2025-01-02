@@ -60,5 +60,3 @@ docker run -p 9090:9090 slav123/prom
 * cleanup content
 * try to skip cookies warning
 * webp
-
-
