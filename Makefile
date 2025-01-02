@@ -1,10 +1,11 @@
-build-amd:
-	docker build -t slav123/prom .
+.PHONY: build push
 
-deploy:
-	docker push slav123/prom
-	kubectl apply -f nodeport.yaml
-
+# Build Docker image
 build:
-	docker buildx build --platform linux/amd64 -t slav123/prom --load .
-	docker push slav123/prom
+	docker buildx build --platform linux/amd64 \
+		-t slav123/prom:latest \
+		--load .
+
+# Push to Docker Hub
+push:
+	docker push slav123/prom:latest
