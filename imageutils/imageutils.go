@@ -1,8 +1,11 @@
 package imageutils
 
 import (
+	"bytes"
 	"encoding/binary"
-	_ "fmt"
+	"fmt"
+	"encoding/xml"
+	"regexp"
 )
 
 // read PNG and return dimensions
@@ -80,28 +83,73 @@ func JPGHeadersQuick(data []byte) (int32, int32) {
 	return 0, 0
 }
 
+// SVGDimensions reads SVG file header and returns dimensions
+func SVGDimensions(body []byte) (int32, int32) {
+	type SVG struct {
+		Width  string `xml:"width,attr"`
+		Height string `xml:"height,attr"`
+	}
+
+	var svg SVG
+	if err := xml.NewDecoder(bytes.NewReader(body)).Decode(&svg); err != nil {
+		return 0, 0
+	}
+
+	// Regular expression to extract numeric values
+	re := regexp.MustCompile(`^(\d+)`)
+
+	// Extract width
+	widthMatch := re.FindString(svg.Width)
+	var width int32
+	if widthMatch != "" {
+		var w int
+		fmt.Sscanf(widthMatch, "%d", &w)
+		width = int32(w)
+	}
+
+	// Extract height
+	heightMatch := re.FindString(svg.Height)
+	var height int32
+	if heightMatch != "" {
+		var h int
+		fmt.Sscanf(heightMatch, "%d", &h)
+		height = int32(h)
+	}
+
+	return width, height
+}
+
+// DetermineImageType returns the image type
 func DetermineImageType(image *[]byte) string {
 
-	bytes := make([]byte, 4, 4)
-	copy(bytes, *image)
+	img := make([]byte, 512) // Increased buffer to detect SVG
+	copy(img, *image)
 
-	if len(bytes) < 4 {
+	if len(img) < 4 {
 		return ""
 	}
 
-	if bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47 {
+	if img[0] == 0x89 && img[1] == 0x50 && img[2] == 0x4E && img[3] == 0x47 {
 		return "png"
 	}
-	if bytes[0] == 0xFF && bytes[1] == 0xD8 {
+	if img[0] == 0xFF && img[1] == 0xD8 {
 		return "jpg"
 	}
-	if bytes[0] == 0x47 && bytes[1] == 0x49 && bytes[2] == 0x46 && bytes[3] == 0x38 {
+	if img[0] == 0x47 && img[1] == 0x49 && img[2] == 0x46 && img[3] == 0x38 {
 		return "gif"
 	}
-	if bytes[0] == 0x42 && bytes[1] == 0x4D {
+
+	// Check for SVG
+	if bytes.Contains(img, []byte("<?xml")) && bytes.Contains(img, []byte("<svg")) {
+		return "svg"
+	}
+	if bytes.HasPrefix(img, []byte("<svg")) {
+		return "svg"
+	}
+	if img[0] == 0x42 && img[1] == 0x4D {
 		return "bmp"
 	}
-	if bytes[0] == 0x52 && bytes[1] == 0x49 {
+	if img[0] == 0x52 && img[1] == 0x49 {
 		return "webp"
 	}
 	return ""

@@ -18,5 +18,5 @@ FROM scratch
 # <- Second step to build minimal image
 COPY --from=build-env /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=build-env /go/bin/prom /go/bin/prom
-EXPOSE 9090
+EXPOSE 9999
 ENTRYPOINT ["/go/bin/prom"]

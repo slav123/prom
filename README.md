@@ -33,6 +33,22 @@ sample output:
     }
 
   
+## Docker
+
+The application is available as a Docker container on Docker Hub at `slav123/prom`. You can pull and run it using:
+
+```bash
+docker pull slav123/prom:latest
+docker run -p 9090:9090 slav123/prom
+```
+
+## Recent Changes (2025-01-02)
+
+* Fixed image type detection in `imageutils.DetermineImageType` function
+* Added proper handling of SVG detection using the `bytes` package
+* Added GitHub Actions workflow for automatic Docker image deployment
+* Images are now automatically built and pushed to Docker Hub on every push to master branch
+
 ## @2do
 
 * read schema.org info
@@ -40,3 +56,5 @@ sample output:
 * cleanup content
 * try to skip cookies warning
 * webp
+
+

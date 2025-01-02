@@ -3,13 +3,13 @@ package htmlutils
 import (
 	"fmt"
 	"io"
-	"log"
 	"net/url"
+	"strings"
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/mauidude/go-readability"
 
-	"strings"
+	"log"
 )
 
 // BaseURL return base url - string .html or last element
@@ -43,7 +43,7 @@ func cleanup(textcopy string) string {
 	return textcopy
 }
 
-//  Excerpt generate excerpt
+// Excerpt generate excerpt
 func Excerpt(textCopy string) string {
 
 	textCopy = cleanup(textCopy)
@@ -86,17 +86,38 @@ func ScrapeImg(r io.Reader, url string) []string {
 
 }
 
-func GetBaseUrlString(src, url string) string {
-
-	if string(src[0]) == "/" {
-		return ServerURL(url) + src
-	} else if string(src[0:4]) == "http" {
-		return src
-	} else {
-		return BaseURL(url) + src
+// GetBaseUrlString get base url
+func GetBaseUrlString(src, baseURL string) string {
+	if src == "" {
+		return baseURL
 	}
+
+	// Handle absolute URLs
+	if strings.HasPrefix(src, "http://") || strings.HasPrefix(src, "https://") {
+		return src
+	}
+
+	// Parse the base URL
+	base, err := url.Parse(baseURL)
+	if err != nil {
+		return src
+	}
+
+	// Handle protocol-relative URLs
+	if strings.HasPrefix(src, "//") {
+		return base.Scheme + ":" + src
+	}
+
+	// Handle relative URLs
+	relativeURL, err := url.Parse(src)
+	if err != nil {
+		return src
+	}
+
+	return base.ResolveReference(relativeURL).String()
 }
 
+// SearchForTitle serach for title
 func SearchForTitle(r io.Reader) string {
 	doc, err := goquery.NewDocumentFromReader(r)
 	if err != nil {
@@ -106,6 +127,7 @@ func SearchForTitle(r io.Reader) string {
 	return doc.Find("title").Text()
 }
 
+// SearchForDate serach for meta date
 func SearchForDate(r io.Reader) string {
 
 	doc, err := goquery.NewDocumentFromReader(r)
@@ -139,7 +161,7 @@ func SearchForDate(r io.Reader) string {
 	return content
 }
 
-// serach for meta og image or sth
+// SearchForMeta for meta og image or sth
 func SearchForMeta(r io.Reader) string {
 
 	doc, err := goquery.NewDocumentFromReader(r)
@@ -195,8 +217,9 @@ func ReadBody(body string) string {
 	content = strings.Replace(content, "</html>", "", -1)
 	content = strings.Replace(content, "<body>", "", -1)
 	content = strings.Replace(content, "</body>", "", -1)
-	//content = strings.Trim(content, "<div>")
-	//content = strings.Trim(content, "</div>")
+	content = strings.TrimPrefix(content, "<div><div>")
+	content = strings.TrimSuffix(content, "</div></div>")
+	content = strings.TrimSpace(content)
 
 	return cleanup(content)
 }

@@ -5,31 +5,33 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
-	"github.com/facebookgo/pidfile"
 	"os"
 	"time"
 
+	"io"
+
 	"github.com/slav123/prom/htmlutils"
 	"github.com/slav123/prom/imageutils"
-	"io"
-	"io/ioutil"
+
 	"log"
 	"net/http"
 	"strconv"
 	"strings"
 
 	"github.com/denisbrodbeck/striphtmltags"
-	_ "google.golang.org/appengine"
-	_ "google.golang.org/appengine/urlfetch"
 )
 
-const maxWorkers = 5
+const (
+	maxWorkers = 5
+	port       = 9999
+)
 
 var (
 	promImage     string
 	maxDimensions int
 )
 
+// GetDimensions get image dimensions
 func GetDimensions(id int, jobs <-chan string, results chan<- int, r *http.Request) {
 
 	var w, h int32
@@ -45,21 +47,14 @@ func GetDimensions(id int, jobs <-chan string, results chan<- int, r *http.Reque
 		min := 0
 		max := 51200
 
-		// get file - app engine
-		/*
-			ctx := appengine.NewContext(r)
-			client := urlfetch.Client(ctx)
-
-			req, err := http.NewRequest("GET", url, nil)
-			rangeHeader := "bytes=" + strconv.Itoa(min) + "-" + strconv.Itoa(max-1) // Add the data for the Range header of the form "bytes=0-100"
-			req.Header.Add("Range", rangeHeader)
-			resp, err := client.Do(req)
-		*/
-		// end app engine
-
 		// get file
 		client := &http.Client{}
-		req, err := http.NewRequest("GET", url, nil)
+		req, err := http.NewRequest(http.MethodGet, url, nil)
+		if err != nil {
+			log.Printf("error creating request for %s: %s", url, err.Error())
+			results <- 0
+			return
+		}
 		rangeHeader := "bytes=" + strconv.Itoa(min) + "-" + strconv.Itoa(max-1) // Add the data for the Range header of the form "bytes=0-100"
 		req.Header.Add("Range", rangeHeader)
 		req.Header.Add("User-agent", "Googlebot-Image/1.0")
@@ -75,7 +70,13 @@ func GetDimensions(id int, jobs <-chan string, results chan<- int, r *http.Reque
 
 		defer resp.Body.Close()
 
-		body, err := ioutil.ReadAll(resp.Body)
+		body, err := io.ReadAll(resp.Body)
+
+		if err != nil {
+			log.Printf("error reading %s: %s", url, err.Error())
+			results <- 0
+			return
+		}
 
 		// display body type
 		//fmt.Println(body[0:max])
@@ -148,10 +149,11 @@ func GetAllImages(re io.Reader, url string, r *http.Request) {
 }
 
 type Output struct {
-	Title string `json:"title"`
-
-	//  DatePublished time.Time `json:"date_published"`
+	Title         string `json:"title"`
+	Success       bool   `json:"success"`
+	Message       string `json:"message"`
 	DatePublished string `json:"date_published"`
+	LastModified  string `json:"last_modified"`
 	LeadImageURL  string `json:"lead_image_url"`
 	Dek           string `json:"dek"`
 	URL           string `json:"url"`
@@ -160,14 +162,9 @@ type Output struct {
 	Content       string `json:"content"`
 }
 
-// generate pid file in /tmp
-func init() {
-	tempDir := os.TempDir()
-	pidfile.SetPidfilePath(tempDir + "/prom.pid")
-	err := pidfile.Write()
-	if err != nil {
-		log.Fatalf("Unable to create pid file %s\n", err)
-	}
+type StatusResponse struct {
+	Alive   bool   `json:"alive"`
+	Version string `json:"version"`
 }
 
 // keep minVersion for static builds
@@ -175,49 +172,58 @@ var minVersion string
 
 func main() {
 	log.Printf("Build: %s\n", minVersion)
-	log.Println("Listening on port: 9090")
+	log.Printf("Listening on port: %d", port)
 
 	http.HandleFunc("/status", handleStatus)
-
 	http.HandleFunc("/url/", handleExtract)
-
 	http.HandleFunc("/", handleStatus)
 
-	//appengine.Main()
-
-	err := http.ListenAndServe(":9090", nil)
+	err := http.ListenAndServe(fmt.Sprintf(":%d", port), nil)
 	if err != nil {
 		log.Fatal("ListenAndServe: ", err)
 	}
 }
 
-// display status with version
+// handleStatus display status with version
 func handleStatus(w http.ResponseWriter, r *http.Request) {
-	// A very simple health check.
+	response := StatusResponse{
+		Alive:   true,
+		Version: minVersion,
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 
-	w.Write([]byte("{ \"alive\" : true, \"version\" : \"" + minVersion + "\"}"))
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 }
 
-// process extraction
+// handleExtract process extraction
 func handleExtract(w http.ResponseWriter, r *http.Request) {
-	url := r.URL.Query().Get("url")
-
-	proxy := r.URL.Query().Get("proxy")
-
-	if proxy == "own" {
-		// https://qie1vuqnpd.execute-api.ap-southeast-2.amazonaws.com/dev/dom?url=
-		url = fmt.Sprintf("%s%s", os.Getenv("PROXY_OWN"), url)
-	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "*")
+	w.Header().Set("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization")
 
 	var result Output
+	result.Success = false // default to false
 
-	/* app engine
-	ctx := appengine.NewContext(r)
-	client := urlfetch.Client(ctx)
-	resp, err := client.Get(url)
-	*/
+	url := r.URL.Query().Get("url")
+	if url == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(Output{
+			Success: false,
+			Message: "Can't work without url",
+		})
+		return
+	}
+
+	proxy := r.URL.Query().Get("proxy")
+	if proxy == "own" {
+		url = fmt.Sprintf("%s%s", os.Getenv("PROXY_OWN"), url)
+	}
 
 	tr := &http.Transport{
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
@@ -229,23 +235,44 @@ func handleExtract(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// get page
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(Output{
+			Success: false,
+			Message: fmt.Sprintf("Failed to create request: %v", err),
+		})
+		log.Printf("Can't create request: %s", err.Error())
+		return
+	}
 
 	// pretend to be google bot ;)
-	req.Header.Add("User-agent", "Googlebot")
+	req.Header.Add("User-agent", "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)")
+	req.Header.Add("Accept-Language", r.Header.Get("Accept-Language"))
 	resp, err := client.Do(req)
-
 	if err != nil {
-		//w.WriteHeader(404)
-		w.Write([]byte("I'm not ok"))
+		w.WriteHeader(http.StatusBadGateway)
+		json.NewEncoder(w).Encode(Output{
+			Success: false,
+			Message: fmt.Sprintf("Failed to fetch page: %v", err.Error()),
+		})
 		log.Printf("Can't read page error: %s", err.Error())
+		return
+	}
+
+	if resp == nil {
+		w.WriteHeader(http.StatusBadGateway)
+		json.NewEncoder(w).Encode(Output{
+			Success: false,
+			Message: "Empty response received",
+		})
+		return
 	}
 	defer resp.Body.Close()
 
 	// we do try to extract image
 	var urlStr string
-
-	if resp != nil && resp.Request != nil {
+	if resp.Request != nil {
 		urlStr = resp.Request.URL.String()
 	} else {
 		urlStr = r.URL.String()
@@ -253,38 +280,34 @@ func handleExtract(w http.ResponseWriter, r *http.Request) {
 
 	// get actual URL of page
 	result.URL = urlStr
-
-	// domain
 	result.Domain = htmlutils.DomainURL(result.URL)
 
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		w.WriteHeader(http.StatusNoContent)
-		fmt.Printf("failed to read body of : %s ", result.URL)
-		w.Write([]byte("I'm not ok, can't read body "))
+		w.WriteHeader(http.StatusBadGateway)
+		json.NewEncoder(w).Encode(Output{
+			Success: false,
+			Message: fmt.Sprintf("Failed to read body: %v", err),
+		})
+		log.Printf("Failed to read body of: %s, error: %v", result.URL, err)
+		return
 	}
 
-	// copy body to process it again
-	resp.Request.Body = ioutil.NopCloser(bytes.NewBuffer(body))
-
-	// log for title
+	// Process the content
 	result.Title = htmlutils.SearchForTitle(bytes.NewReader(body))
 
-	// date
 	result.DatePublished = htmlutils.SearchForDate(bytes.NewReader(body))
 
-	// content
+	if lastMod := resp.Header.Get("Last-Modified"); lastMod != "" {
+		result.LastModified = lastMod
+	}
+
 	result.Content = htmlutils.ReadBody(string(body))
-
-	// trimmed
 	result.Dek = strings.Trim(striphtmltags.StripTags(result.Content), " ")
-
-	// excerpt
 	result.Excerpt = htmlutils.Excerpt(result.Dek)
 
-	// lead image - first try tu get it form meta
+	// lead image - first try to get it from meta
 	promImage = htmlutils.SearchForMeta(bytes.NewReader(body))
-
 	if promImage == "" {
 		maxDimensions = 0
 		GetAllImages(bytes.NewReader(body), url, r)
@@ -297,21 +320,20 @@ func handleExtract(w http.ResponseWriter, r *http.Request) {
 	}
 	result.LeadImageURL = promImage
 
-	buf := new(bytes.Buffer)
-	enc := json.NewEncoder(buf)
-	enc.SetEscapeHTML(false)
+	// If we got here, everything was successful
+	result.Success = true
+	result.Message = "Content extracted successfully"
 
-	if err := enc.Encode(&result); err != nil {
-		log.Println(err)
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Methods", "*")
-	w.Header().Set("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization")
 	w.WriteHeader(http.StatusOK)
-
-	w.Write(buf.Bytes())
-	//out.WriteTo(os.Stdout)
-
+	enc := json.NewEncoder(w)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(&result); err != nil {
+		log.Printf("Failed to encode response: %v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(Output{
+			Success: false,
+			Message: "Failed to encode response",
+		})
+		return
+	}
 }

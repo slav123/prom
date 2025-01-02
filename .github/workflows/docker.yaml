@@ -1,0 +1,42 @@
+name: Deploy to Docker Hub
+
+on:
+  push:
+    branches:
+      - master
+
+env:
+  DOCKERHUB_REPOSITORY: slav123/prom
+
+jobs:
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_ACCESS_TOKEN }}
+
+      - name: Build, tag, and push images to Docker Hub
+        id: build-image
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          # Build and push the image with the commit SHA tag
+          docker build -t ${{ env.DOCKERHUB_REPOSITORY }}:$IMAGE_TAG .
+          docker push ${{ env.DOCKERHUB_REPOSITORY }}:$IMAGE_TAG
+
+          # Tag the image as 'latest' and push
+          docker tag ${{ env.DOCKERHUB_REPOSITORY }}:$IMAGE_TAG ${{ env.DOCKERHUB_REPOSITORY }}:latest
+          docker push ${{ env.DOCKERHUB_REPOSITORY }}:latest
+
+          # Output both image references
+          echo "image=${{ env.DOCKERHUB_REPOSITORY }}:$IMAGE_TAG" >> $GITHUB_OUTPUT
+          echo "latest_image=${{ env.DOCKERHUB_REPOSITORY }}:latest" >> $GITHUB_OUTPUT
