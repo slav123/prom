@@ -16,21 +16,25 @@ We do some smart image type recognition, and we don't download whole images, onl
     
 then try in browser
 
-    https://localhost:9090/url/?url=https://github.com/slav123/
+    http://localhost:9999/url/?url=https://www.jasinski.us
     
     
 sample output:
-	
-    {
-        "title":"slav123 (Slawomir Jasinski) · GitHub",
-        "date_published":"",
-        "lead_image_url":"https://avatars1.githubusercontent.com/u/185637?s=400&u=d4ba7571ac4c302ccb67f9962727d1c6fa01e170&v=4",
-        "dek":"We use optional third-party analytics cookies to ...",
-        "url":"https://github.com/slav123/",
-        "domain":"https://github.com",
-        "excerpt":"We use optional third-party analytics cookies to understand how you use GitHub.com so we can build better products",
-        "content":"<div><div> <div> <p> We use optional third-party analytics cookies to understand how you use GitHub.com so we can... </p> </div> </div></div>"
-    }
+	```JSON
+{
+    "title": "about |\nSlawomir Jasinski",
+    "success": true,
+    "message": "Content extracted successfully",
+    "date_published": "",
+    "last_modified": "Fri, 20 Dec 2024 09:48:48 GMT",
+    "lead_image_url": "https://www.jasinski.us/images/2024/06/aws-advanced-services-for-solutions-architects.jpeg",
+    "dek": "Shifting to a cloud-native architecture 🌐 is not just a trend—it’s a strategic move that can propel your applications to new heights in terms of flexibility, scalability, and performance. Today, we’re diving deep into the when, why, and how of making this crucial transition, with an eye on navigating the choices between cloud-native and traditional setups 🚀. Let’s also tackle a common concern: the risk of vendor lock-in, and explore “safe” strategies to mitigate this issue.",
+    "url": "https://www.jasinski.us",
+    "domain": "https://www.jasinski.us",
+    "excerpt": "Shifting to a cloud-native architecture 🌐 is not just a trend—it’s a strategic move that can propel your applications to new heights in terms of flexibility, scalability, and performance. Today, we’re diving deep into the when, why, and how of making this crucial transition, with an eye on navigating the choices between cloud-native and traditional setups 🚀. Let’s also tackle a common concern: the risk of vendor lock-in, and explore",
+    "content": "<p>Shifting to a cloud-native architecture 🌐 is not just a trend—it’s a strategic move that can propel your applications to new heights in terms of flexibility, scalability, and performance. Today, we’re diving deep into the when, why, and how of making this crucial transition, with an eye on navigating the choices between cloud-native and traditional setups 🚀. Let’s also tackle a common concern: the risk of vendor lock-in, and explore “safe” strategies to mitigate this issue.</p>"
+}
+```
 
   
 ## Docker
