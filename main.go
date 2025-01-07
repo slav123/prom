@@ -33,17 +33,22 @@ var (
 	maxDimensions int
 )
 
+// ImageResult holds information about processed image
+type ImageResult struct {
+	URL    string
+	Width  int32
+	Height int32
+	Area   int
+}
+
 // GetDimensions get image dimensions
-func GetDimensions(id int, jobs <-chan string, results chan<- int, r *http.Request) {
-
-	var w, h int32
-
+func GetDimensions(id int, jobs <-chan string, results chan<- ImageResult, r *http.Request) {
 	for url := range jobs {
+		result := ImageResult{
+			URL: url,
+		}
 
-		w = 0
-		h = 0
-
-		fmt.Println("worker", id, "started  job", url)
+		fmt.Println("worker", id, "started job", url)
 
 		// header size to get
 		min := 0
@@ -54,35 +59,29 @@ func GetDimensions(id int, jobs <-chan string, results chan<- int, r *http.Reque
 		req, err := http.NewRequest(http.MethodGet, url, nil)
 		if err != nil {
 			log.Printf("error creating request for %s: %s", url, err.Error())
-			results <- 0
-			return
+			results <- result
+			continue
 		}
-		rangeHeader := "bytes=" + strconv.Itoa(min) + "-" + strconv.Itoa(max-1) // Add the data for the Range header of the form "bytes=0-100"
+
+		rangeHeader := "bytes=" + strconv.Itoa(min) + "-" + strconv.Itoa(max-1)
 		req.Header.Add("Range", rangeHeader)
 		req.Header.Add("User-agent", "Googlebot-Image/1.0")
-		// req.Header.Add("Referer", base_url)
 		resp, err := client.Do(req)
 
 		if err != nil {
 			log.Printf("error pulling %s: %s", url, err.Error())
-
-			results <- 0
-			return
+			results <- result
+			continue
 		}
 
-		defer resp.Body.Close()
-
 		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
 
 		if err != nil {
 			log.Printf("error reading %s: %s", url, err.Error())
-			results <- 0
-			return
+			results <- result
+			continue
 		}
-
-		// display body type
-		//fmt.Println(body[0:max])
-		//fmt.Printf("%#X\n", body[0:max])
 
 		// determine image type
 		fileType := imageutils.DetermineImageType(&body)
@@ -90,45 +89,36 @@ func GetDimensions(id int, jobs <-chan string, results chan<- int, r *http.Reque
 		// get dimensions
 		switch fileType {
 		case "png":
-			w, h = imageutils.PNGDimensions(body)
+			result.Width, result.Height = imageutils.PNGDimensions(body)
 		case "jpg":
-			w, h = imageutils.JPGDimensions(body)
+			result.Width, result.Height = imageutils.JPGDimensions(body)
 		case "gif":
-			w, h = imageutils.GIFDimensions(body)
-
-		default:
-			w = 0
-			h = 0
+			result.Width, result.Height = imageutils.GIFDimensions(body)
+		case "webp":
+			result.Width, result.Height = imageutils.WEBPDimensions(body)
+		case "svg":
+			result.Width, result.Height = imageutils.SVGDimensions(body)
 		}
 
-		z := int(w * h)
+		result.Area = int(result.Width * result.Height)
+		fmt.Printf("url: %s, width: %d, height: %d, area: %d\n", 
+			result.URL, result.Width, result.Height, result.Area)
 
-		fmt.Printf("url: %s, width: %d, height: %d, z: %d\n", url, w, h, z)
-
-		if z > maxDimensions {
-			promImage = url
-			maxDimensions = z
-			fmt.Println("hit", z)
-		}
-
-		results <- z
+		results <- result
 	}
 }
 
 // GetAllImages on the website
-func GetAllImages(re io.Reader, url string, r *http.Request) {
-
+func GetAllImages(re io.Reader, url string, r *http.Request) string {
 	// get all images url
 	images := htmlutils.ScrapeImg(re, url)
 
 	// count images
 	imagesCount := len(images)
 
-	//fmt.Println("found ", imagesCount)
-
 	// jobs & results feeds
 	jobs := make(chan string, imagesCount)
-	results := make(chan int, imagesCount)
+	results := make(chan ImageResult, imagesCount)
 
 	// spin up workers
 	for w := 1; w <= maxWorkers; w++ {
@@ -141,13 +131,21 @@ func GetAllImages(re io.Reader, url string, r *http.Request) {
 	}
 	close(jobs)
 
-	// get results
+	// collect all results
+	var largestImage ImageResult
 	for a := 0; a < imagesCount; a++ {
-		<-results
+		result := <-results
+		if result.Area > largestImage.Area {
+			largestImage = result
+		}
 	}
 
-	fmt.Println("prom image", promImage)
+	if largestImage.URL != "" {
+		fmt.Printf("Largest image found: %s (dimensions: %dx%d, area: %d)\n", 
+			largestImage.URL, largestImage.Width, largestImage.Height, largestImage.Area)
+	}
 
+	return largestImage.URL
 }
 
 type Output struct {
@@ -327,8 +325,7 @@ func handleExtract(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if promImage == "" {
-		maxDimensions = 0
-		GetAllImages(bytes.NewReader(body), url, r)
+		promImage = GetAllImages(bytes.NewReader(body), url, r)
 	} else {
 		// remove proxy url from image
 		if proxy == "own" {

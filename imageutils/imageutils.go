@@ -3,8 +3,8 @@ package imageutils
 import (
 	"bytes"
 	"encoding/binary"
-	"fmt"
 	"encoding/xml"
+	"fmt"
 	"regexp"
 )
 
@@ -20,12 +20,27 @@ func GIFDimensions(body []byte) (int32, int32) {
 
 }
 
+// read JPG and return dimensions
 func JPGDimensions(body []byte) (int32, int32) {
 	w, h := JPGHeadersQuick(body)
 	if w <= 0 || h <= 0 {
 		w, h = JPGHeaders(body)
 	}
 	return w, h
+}
+
+// WEBPDimensions returns the width and height of a WebP image
+func WEBPDimensions(header []byte) (int32, int32) {
+	// Check if the file is a WebP
+	if string(header[:4]) != "RIFF" || string(header[8:12]) != "WEBP" {
+		return 0, 0
+	}
+
+	// Extract width and height from the header
+	width := int(header[26]) | (int(header[27]) << 8)
+	height := int(header[28]) | (int(header[29]) << 8)
+
+	return int32(width), int32(height)
 }
 
 // read JPG headers and return dimensions look only for basic marker
