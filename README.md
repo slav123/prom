@@ -4,6 +4,7 @@ Simple go service to find a prominent image on the website.
 
 App is also capable of extracting excerpt from the website, and content with HTML tags.
 It's useful to create a website "preview" for news reader or something.
+
 ## How it works
 
 Algorithm is pretty simple, we scrape all images. We look for the biggest one. It utilises go routines to do the image comparison.
@@ -20,7 +21,7 @@ then try in browser
     
     
 sample output:
-	```JSON
+```JSON
 {
     "title": "about |\nSlawomir Jasinski",
     "success": true,
@@ -59,4 +60,3 @@ docker run -p 9090:9090 slav123/prom
 * recognize meta from wordpress
 * cleanup content
 * try to skip cookies warning
-* webp
