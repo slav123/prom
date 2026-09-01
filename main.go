@@ -36,21 +36,59 @@ var (
 	maxDimensions int
 )
 
-func validateRequestURL(rawURL string) error {
+// sanitizeRequestURL parses and validates a raw URL and returns a normalized,
+// absolute URL that is safe to request. It rejects non-http(s) schemes,
+// relative URLs, URLs containing credentials, and URLs whose host resolves to a
+// non-public IP address. The returned string is the canonical form produced by
+// url.URL.String(), so it no longer contains the raw user-supplied value.
+func sanitizeRequestURL(rawURL string) (string, error) {
 	parsedURL, err := url.Parse(rawURL)
 	if err != nil {
-		return fmt.Errorf("invalid URL: %w", err)
+		return "", fmt.Errorf("invalid URL: %w", err)
+	}
+	if !parsedURL.IsAbs() {
+		return "", fmt.Errorf("URL must be absolute")
 	}
 	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
-		return fmt.Errorf("unsupported URL scheme %q", parsedURL.Scheme)
+		return "", fmt.Errorf("unsupported URL scheme %q", parsedURL.Scheme)
 	}
-	if parsedURL.Hostname() == "" || parsedURL.User != nil {
-		return fmt.Errorf("URL must contain a host and no credentials")
+	if parsedURL.Hostname() == "" {
+		return "", fmt.Errorf("URL must contain a host")
 	}
-	if ip := net.ParseIP(parsedURL.Hostname()); ip != nil && !isPublicIP(ip) {
-		return fmt.Errorf("URL resolves to a non-public address")
+	if parsedURL.User != nil {
+		return "", fmt.Errorf("URL must not contain credentials")
 	}
-	return nil
+
+	host := parsedURL.Hostname()
+	if ip := net.ParseIP(host); ip != nil {
+		if !isPublicIP(ip) {
+			return "", fmt.Errorf("URL resolves to a non-public address")
+		}
+		return parsedURL.String(), nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	ips, err := net.DefaultResolver.LookupIP(ctx, "ip", host)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve host: %w", err)
+	}
+	if len(ips) == 0 {
+		return "", fmt.Errorf("host has no DNS records")
+	}
+	for _, ip := range ips {
+		if !isPublicIP(ip) {
+			return "", fmt.Errorf("URL resolves to a non-public address")
+		}
+	}
+	return parsedURL.String(), nil
+}
+
+// validateRequestURL is a convenience wrapper around sanitizeRequestURL for
+// callers that only need to check validity without using the canonical URL.
+func validateRequestURL(rawURL string) error {
+	_, err := sanitizeRequestURL(rawURL)
+	return err
 }
 
 func isPublicIP(ip net.IP) bool {
@@ -128,13 +166,14 @@ func GetDimensions(id int, jobs <-chan string, results chan<- ImageResult, r *ht
 		max := 51200
 
 		// get file
-		if err := validateRequestURL(url); err != nil {
+		safeURL, err := sanitizeRequestURL(url)
+		if err != nil {
 			log.Printf("refusing image URL %s: %s", sanitizeForLog(url), err.Error())
 			results <- result
 			continue
 		}
 		client := newSafeHTTPClient(10 * time.Second)
-		req, err := http.NewRequest(http.MethodGet, url, nil)
+		req, err := http.NewRequest(http.MethodGet, safeURL, nil)
 		if err != nil {
 			log.Printf("error creating request for %s: %s", sanitizeForLog(url), err.Error())
 			results <- result
@@ -305,7 +344,8 @@ func handleExtract(w http.ResponseWriter, r *http.Request) {
 		url = fmt.Sprintf("%s%s", os.Getenv("PROXY_OWN"), url)
 	}
 
-	if err := validateRequestURL(url); err != nil {
+	safeURL, err := sanitizeRequestURL(url)
+	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(Output{
 			Success: false,
@@ -317,7 +357,7 @@ func handleExtract(w http.ResponseWriter, r *http.Request) {
 	client := newSafeHTTPClient(10 * time.Second)
 
 	// get page
-	req, err := http.NewRequest(http.MethodGet, url, nil)
+	req, err := http.NewRequest(http.MethodGet, safeURL, nil)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(Output{

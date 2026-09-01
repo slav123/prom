@@ -21,7 +21,9 @@ func TestValidateRequestURL(t *testing.T) {
 		{name: "Link local", url: "http://169.254.169.254/latest/meta-data", wantErr: true},
 		{name: "Credentials", url: "https://user:password@example.com", wantErr: true},
 		{name: "Unsupported scheme", url: "file:///etc/passwd", wantErr: true},
-		{name: "Missing host", url: "/relative", wantErr: true},
+		{name: "Missing host", url: "http:///path", wantErr: true},
+		{name: "Relative URL", url: "/relative", wantErr: true},
+		{name: "Localhost", url: "http://localhost/admin", wantErr: true},
 	}
 
 	for _, tt := range tests {
