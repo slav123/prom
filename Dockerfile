@@ -1,5 +1,8 @@
 # Build stage
-FROM golang:1.24-alpine AS builder
+FROM golang:1.25-alpine AS builder
+
+ARG TARGETOS
+ARG TARGETARCH
 
 # Install required system packages
 RUN apk --no-cache add ca-certificates tzdata git
@@ -17,7 +20,7 @@ RUN go mod download
 COPY . .
 
 # Build the application
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} go build \
     -ldflags="-s -w -X main.minVersion=$(date -u +%Y%m%d.%H%M)" \
     -o /go/bin/prom
 
