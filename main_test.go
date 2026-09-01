@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -28,11 +29,14 @@ func TestHandleExtract(t *testing.T) {
 			status, http.StatusOK)
 	}
 
-	// Check the response body is what we expect.
-	expected := `{ "alive" : true, "version" : ""}`
-	if rr.Body.String() != expected {
-		t.Errorf("handler returned unexpected body: got %v want %v",
-			rr.Body.String(), expected)
+	// Check the response body contains expected fields.
+	var result Output
+	if err := json.Unmarshal(rr.Body.Bytes(), &result); err != nil {
+		t.Fatalf("failed to parse response body: %v", err)
+	}
+
+	if !result.Success {
+		t.Errorf("expected success to be true, got false: %s", result.Message)
 	}
 }
 
@@ -59,9 +63,12 @@ func TestHealthCheckHandler(t *testing.T) {
 	}
 
 	// Check the response body is what we expect.
-	expected := `{ "alive" : true, "version" : ""}`
-	if rr.Body.String() != expected {
-		t.Errorf("handler returned unexpected body: got %v want %v",
-			rr.Body.String(), expected)
+	var response StatusResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &response); err != nil {
+		t.Fatalf("failed to parse response body: %v", err)
+	}
+
+	if !response.Alive {
+		t.Error("expected alive to be true")
 	}
 }
