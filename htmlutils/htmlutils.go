@@ -1,7 +1,6 @@
 package htmlutils
 
 import (
-	"fmt"
 	"io"
 	"net/url"
 	"strings"
@@ -76,7 +75,6 @@ func ScrapeImg(r io.Reader, url string) []string {
 		}
 
 		fullImageUrl := GetBaseUrlString(src, url)
-		fmt.Println(src, url)
 
 		images = append(images, fullImageUrl)
 
@@ -229,7 +227,7 @@ func ReadBodyFromDoc(doc *goquery.Document) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	
+
 	readDoc, err := readability.NewDocument(html)
 	if err != nil {
 		return "", err

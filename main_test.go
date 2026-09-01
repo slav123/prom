@@ -7,36 +7,52 @@ import (
 	"testing"
 )
 
-func TestHandleExtract(t *testing.T) {
-	// Create a request to pass to our handler. We don't have any query parameters for now, so we'll
-	// pass 'nil' as the third parameter.
-	req, err := http.NewRequest("GET", "/url/?url=http://localhost", nil)
+func TestValidateRequestURL(t *testing.T) {
+	tests := []struct {
+		name    string
+		url     string
+		wantErr bool
+	}{
+		{name: "HTTPS", url: "https://example.com/article"},
+		{name: "HTTP", url: "http://example.com/article"},
+		{name: "Loopback", url: "http://127.0.0.1/admin", wantErr: true},
+		{name: "IPv6 loopback", url: "http://[::1]/admin", wantErr: true},
+		{name: "Private network", url: "http://10.0.0.1/admin", wantErr: true},
+		{name: "Link local", url: "http://169.254.169.254/latest/meta-data", wantErr: true},
+		{name: "Credentials", url: "https://user:password@example.com", wantErr: true},
+		{name: "Unsupported scheme", url: "file:///etc/passwd", wantErr: true},
+		{name: "Missing host", url: "/relative", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateRequestURL(tt.url)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("validateRequestURL(%q) error = %v, wantErr %v", tt.url, err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestHandleExtractRejectsPrivateTarget(t *testing.T) {
+	req, err := http.NewRequest(http.MethodGet, "/url/?url=http://127.0.0.1/admin", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	// We create a ResponseRecorder (which satisfies http.ResponseWriter) to record the response.
 	rr := httptest.NewRecorder()
-	handler := http.HandlerFunc(handleExtract)
+	http.HandlerFunc(handleExtract).ServeHTTP(rr, req)
 
-	// Our handlers satisfy http.Handler, so we can call their ServeHTTP method
-	// directly and pass in our Request and ResponseRecorder.
-	handler.ServeHTTP(rr, req)
-
-	// Check the status code is what we expect.
-	if status := rr.Code; status != http.StatusOK {
-		t.Errorf("handler returned wrong status code: got %v want %v",
-			status, http.StatusOK)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("handler returned status %d, want %d", rr.Code, http.StatusBadRequest)
 	}
 
-	// Check the response body contains expected fields.
 	var result Output
 	if err := json.Unmarshal(rr.Body.Bytes(), &result); err != nil {
 		t.Fatalf("failed to parse response body: %v", err)
 	}
-
-	if !result.Success {
-		t.Errorf("expected success to be true, got false: %s", result.Message)
+	if result.Success {
+		t.Fatal("expected request to be rejected")
 	}
 }
 

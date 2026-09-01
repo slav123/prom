@@ -2,10 +2,12 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net"
 	"os"
 	"time"
 
@@ -16,6 +18,7 @@ import (
 
 	"log"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -33,6 +36,76 @@ var (
 	maxDimensions int
 )
 
+func validateRequestURL(rawURL string) error {
+	parsedURL, err := url.Parse(rawURL)
+	if err != nil {
+		return fmt.Errorf("invalid URL: %w", err)
+	}
+	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
+		return fmt.Errorf("unsupported URL scheme %q", parsedURL.Scheme)
+	}
+	if parsedURL.Hostname() == "" || parsedURL.User != nil {
+		return fmt.Errorf("URL must contain a host and no credentials")
+	}
+	if ip := net.ParseIP(parsedURL.Hostname()); ip != nil && !isPublicIP(ip) {
+		return fmt.Errorf("URL resolves to a non-public address")
+	}
+	return nil
+}
+
+func isPublicIP(ip net.IP) bool {
+	return ip.IsGlobalUnicast() && !ip.IsPrivate()
+}
+
+// sanitizeForLog removes line breaks from untrusted strings before they are
+// written to logs, preventing a malicious value from forging new log entries.
+func sanitizeForLog(s string) string {
+	s = strings.ReplaceAll(s, "\n", " ")
+	s = strings.ReplaceAll(s, "\r", " ")
+	return s
+}
+
+func safeDialContext(ctx context.Context, network, address string) (net.Conn, error) {
+	host, port, err := net.SplitHostPort(address)
+	if err != nil {
+		return nil, fmt.Errorf("invalid request address: %w", err)
+	}
+	ips, err := net.DefaultResolver.LookupIP(ctx, "ip", host)
+	if err != nil {
+		return nil, fmt.Errorf("resolve request host: %w", err)
+	}
+	var dialer net.Dialer
+	for _, ip := range ips {
+		if !isPublicIP(ip) {
+			continue
+		}
+		conn, dialErr := dialer.DialContext(ctx, network, net.JoinHostPort(ip.String(), port))
+		if dialErr == nil {
+			return conn, nil
+		}
+		err = dialErr
+	}
+	if err != nil {
+		return nil, fmt.Errorf("connect to request host: %w", err)
+	}
+	return nil, fmt.Errorf("request host has no public IP addresses")
+}
+
+func newSafeHTTPClient(timeout time.Duration) *http.Client {
+	transport := &http.Transport{
+		DialContext:     safeDialContext,
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	}
+	client := &http.Client{
+		Timeout:   timeout,
+		Transport: transport,
+	}
+	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		return validateRequestURL(req.URL.String())
+	}
+	return client
+}
+
 // ImageResult holds information about processed image
 type ImageResult struct {
 	URL    string
@@ -48,17 +121,22 @@ func GetDimensions(id int, jobs <-chan string, results chan<- ImageResult, r *ht
 			URL: url,
 		}
 
-		fmt.Println("worker", id, "started job", url)
+		fmt.Println("worker", id, "started job", sanitizeForLog(url))
 
 		// header size to get
 		min := 0
 		max := 51200
 
 		// get file
-		client := &http.Client{}
+		if err := validateRequestURL(url); err != nil {
+			log.Printf("refusing image URL %s: %s", sanitizeForLog(url), err.Error())
+			results <- result
+			continue
+		}
+		client := newSafeHTTPClient(10 * time.Second)
 		req, err := http.NewRequest(http.MethodGet, url, nil)
 		if err != nil {
-			log.Printf("error creating request for %s: %s", url, err.Error())
+			log.Printf("error creating request for %s: %s", sanitizeForLog(url), err.Error())
 			results <- result
 			continue
 		}
@@ -69,7 +147,7 @@ func GetDimensions(id int, jobs <-chan string, results chan<- ImageResult, r *ht
 		resp, err := client.Do(req)
 
 		if err != nil {
-			log.Printf("error pulling %s: %s", url, err.Error())
+			log.Printf("error pulling %s: %s", sanitizeForLog(url), err.Error())
 			results <- result
 			continue
 		}
@@ -78,7 +156,7 @@ func GetDimensions(id int, jobs <-chan string, results chan<- ImageResult, r *ht
 		resp.Body.Close()
 
 		if err != nil {
-			log.Printf("error reading %s: %s", url, err.Error())
+			log.Printf("error reading %s: %s", sanitizeForLog(url), err.Error())
 			results <- result
 			continue
 		}
@@ -101,7 +179,7 @@ func GetDimensions(id int, jobs <-chan string, results chan<- ImageResult, r *ht
 		}
 
 		result.Area = int(result.Width * result.Height)
-		fmt.Printf("url: %s, width: %d, height: %d, area: %d\n", 
+		fmt.Printf("url: %s, width: %d, height: %d, area: %d\n",
 			result.URL, result.Width, result.Height, result.Area)
 
 		results <- result
@@ -141,7 +219,7 @@ func GetAllImages(re io.Reader, url string, r *http.Request) string {
 	}
 
 	if largestImage.URL != "" {
-		fmt.Printf("Largest image found: %s (dimensions: %dx%d, area: %d)\n", 
+		fmt.Printf("Largest image found: %s (dimensions: %dx%d, area: %d)\n",
 			largestImage.URL, largestImage.Width, largestImage.Height, largestImage.Area)
 	}
 
@@ -227,14 +305,16 @@ func handleExtract(w http.ResponseWriter, r *http.Request) {
 		url = fmt.Sprintf("%s%s", os.Getenv("PROXY_OWN"), url)
 	}
 
-	tr := &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	if err := validateRequestURL(url); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(Output{
+			Success: false,
+			Message: fmt.Sprintf("Invalid request URL: %v", err),
+		})
+		return
 	}
 
-	client := &http.Client{
-		Timeout:   time.Second * 10,
-		Transport: tr,
-	}
+	client := newSafeHTTPClient(10 * time.Second)
 
 	// get page
 	req, err := http.NewRequest(http.MethodGet, url, nil)
@@ -291,7 +371,7 @@ func handleExtract(w http.ResponseWriter, r *http.Request) {
 			Success: false,
 			Message: fmt.Sprintf("Failed to read body: %v", err),
 		})
-		log.Printf("Failed to read body of: %s, error: %v", result.URL, err)
+		log.Printf("Failed to read body of: %s, error: %v", sanitizeForLog(result.URL), err)
 		return
 	}
 
@@ -305,7 +385,13 @@ func handleExtract(w http.ResponseWriter, r *http.Request) {
 	result.Title = htmlutils.SearchForTitleFromDoc(doc)
 	result.DatePublished = htmlutils.SearchForDateFromDoc(doc)
 	result.Description, err = htmlutils.SearchForMetaTag(bytes.NewReader(body), "description")
+	if err != nil {
+		slog.Error(err.Error())
+	}
 	result.Keywords, err = htmlutils.SearchForMetaTag(bytes.NewReader(body), "keywords")
+	if err != nil {
+		slog.Error(err.Error())
+	}
 
 	if lastMod := resp.Header.Get("Last-Modified"); lastMod != "" {
 		result.LastModified = lastMod
